@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>מסע כוכבים</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --page: #efe6d2;
+    --ink: #2a2240;
+    --panel: #e1d5ba;
+    --btn: #2a2240;
+    --btn-text: #f4ecd8;
+    --accent: #ffd166;
+    --accent-ink: #1b1530;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #12101f; --ink: #f4ecd8; --panel: #1d1a30;
+      --btn: #2d2748; --btn-text: #f4ecd8;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #12101f; --ink: #f4ecd8; --panel: #1d1a30;
+    --btn: #2d2748; --btn-text: #f4ecd8;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { margin: 0; min-height: 100%; background: var(--page); }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .game { width: min(100%, 560px); padding: 10px; }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px 8px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .hud .lives { color: #e4572e; letter-spacing: 2px; min-width: 4.5em; }
+  .stage { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 5 / 3;
+    image-rendering: pixelated;
+    touch-action: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 18px;
+    background: rgba(18, 16, 31, 0.84);
+    color: #f4ecd8;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 { margin: 0; font-size: clamp(26px, 8vw, 40px); font-weight: 700; line-height: 1.1; }
+  .overlay p { margin: 0; font-size: clamp(14px, 3.6vw, 17px); line-height: 1.5; max-width: 32ch; }
+  .overlay .hint { font-size: clamp(12px, 3vw, 14px); opacity: 0.7; }
+  .overlay button {
+    margin-top: 6px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 30px;
+    font: 700 18px 'Rubik', system-ui, sans-serif;
+    cursor: pointer;
+  }
+  .overlay button:focus-visible, .controls button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .controls {
+    direction: ltr;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+    padding: 0 4px;
+  }
+  .dpad { display: flex; gap: 12px; }
+  .controls button {
+    background: var(--btn);
+    color: var(--btn-text);
+    border: 0;
+    border-radius: 18px;
+    font: 500 28px 'Rubik', system-ui, sans-serif;
+    width: 84px;
+    height: 72px;
+    cursor: pointer;
+    touch-action: none;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+  }
+  .controls button.jump { width: 120px; font-size: 20px; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  .controls button:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+  @media (max-width: 380px) {
+    .controls button { width: 70px; height: 64px; }
+    .controls button.jump { width: 100px; }
+  }
+</style>
+</head>
+<body>
+<main class="game">
+  <div class="hud">
+    <div id="hudLevel">שלב 1</div>
+    <div id="hudStars">כוכבים 0/0</div>
+    <div id="hudScore">ניקוד 0</div>
+    <div class="lives" id="hudLives" aria-label="חיים"></div>
+  </div>
+
+  <div class="stage">
+    <canvas id="cv" width="400" height="240" aria-label="לוח המשחק"></canvas>
+    <div class="overlay" id="ov">
+      <h1 id="ovTitle">מסע כוכבים</h1>
+      <p id="ovText">אוספים כוכבים, קופצים על אויבים ומגיעים לשער בסוף כל שלב.</p>
+      <p class="hint" id="ovHint">חצים או A ו־D לתנועה, רווח או W לקפיצה. במגע: הכפתורים שמתחת למסך.</p>
+      <button id="ovBtn">התחלה</button>
+    </div>
+  </div>
+
+  <div class="controls" dir="ltr">
+    <div class="dpad">
+      <button id="bL" aria-label="שמאלה">◀</button>
+      <button id="bR" aria-label="ימינה">▶</button>
+    </div>
+    <button id="bJ" class="jump" aria-label="קפיצה">קפיצה</button>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var T = 16, VW = 400, VH = 240, H = 15;
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+
+  /* ---------- level data ---------- */
+  function line(a, b, r) { var o = []; for (var x = a; x <= b; x++) o.push([x, r]); return o; }
+  function cat() { return Array.prototype.concat.apply([], arguments); }
+
+  var LEVELS = [
+    {
+      name: 'שקיעה', w: 90, start: [2, 12], goal: [86, 12],
+      sky: ['#2a2250', '#e8825a'], orb: '#ffd9a0', orbPos: [300, 150], orbR: 24,
+      hill: ['#4a3470', '#2e2250'], body: '#1f1a33', accent: '#f0a35e', night: false,
+      ground: [[0, 20], [22, 40], [42, 60], [62, 90]],
+      plats: [[9, 10, 3], [13, 8, 3], [30, 10, 3], [34, 8, 2], [47, 10, 3], [52, 8, 3], [66, 10, 2], [70, 8, 2], [74, 10, 2], [79, 9, 3]],
+      spikes: [[14, 11], [15, 11], [26, 11], [52, 11], [53, 11], [84, 11]],
+      enemies: [[33, 12, 28, 37], [57, 12, 55, 58], [76, 12, 72, 82]],
+      cps: [[44, 12]],
+      stars: cat(line(4, 7, 10), line(9, 11, 9), line(13, 15, 7), [[20, 9], [21, 9]], line(30, 32, 9), line(34, 35, 7),
+                 line(47, 49, 9), line(52, 54, 7), [[60, 9], [61, 9]], line(66, 67, 9), line(70, 71, 7), line(74, 75, 9),
+                 line(79, 81, 8), line(83, 85, 10))
+    },
+    {
+      name: 'לילה', w: 110, start: [2, 12], goal: [106, 12],
+      sky: ['#0b1230', '#1f4a5c'], orb: '#e9efff', orbPos: [310, 52], orbR: 15,
+      hill: ['#16305a', '#0f2144'], body: '#0f1a2c', accent: '#4fd1b5', night: true,
+      ground: [[0, 14], [17, 26], [29, 37], [40, 52], [55, 64], [68, 110]],
+      plats: [[4, 10, 3], [8, 8, 3], [19, 10, 3], [23, 8, 3], [31, 10, 3], [34, 8, 2], [42, 9, 3], [65, 10, 2],
+              [72, 10, 3], [76, 8, 3], [88, 10, 3], [92, 8, 3], [96, 10, 3]],
+      spikes: [[8, 11], [47, 11], [48, 11], [82, 11], [83, 11], [103, 11]],
+      enemies: [[20, 12, 17, 24], [44, 12, 41, 45], [60, 12, 56, 61], [74, 12, 70, 80], [93, 12, 86, 96]],
+      cps: [[41, 12], [69, 12]],
+      stars: cat(line(4, 6, 9), line(8, 10, 7), [[14, 9], [15, 9], [16, 9]], line(19, 21, 9), line(23, 25, 7),
+                 [[27, 9], [28, 9]], line(31, 33, 9), line(34, 35, 7), [[38, 9], [39, 9]], line(42, 44, 8),
+                 line(47, 48, 9), [[53, 9], [54, 9]], [[65, 9], [66, 9]], line(72, 74, 9), line(76, 78, 7),
+                 line(88, 90, 9), line(92, 94, 7), line(96, 98, 9), line(102, 104, 10))
+    },
+    {
+      name: 'זריחה', w: 120, start: [2, 12], goal: [115, 12],
+      sky: ['#3b2a66', '#f4a6a0'], orb: '#fff1c9', orbPos: [90, 150], orbR: 22,
+      hill: ['#6a4a8c', '#4b3470'], body: '#2a1d45', accent: '#ffd166', night: false,
+      ground: [[0, 12], [15, 22, 11], [25, 30, 10], [33, 40, 11], [43, 52], [55, 58], [61, 70], [73, 80, 11], [83, 92, 10], [95, 120]],
+      plats: [[3, 10, 3], [7, 8, 3], [17, 9, 3], [26, 8, 3], [35, 9, 3], [75, 9, 3], [97, 10, 2], [100, 8, 3], [104, 10, 2], [107, 8, 3]],
+      spikes: [[8, 11], [47, 11], [48, 11], [66, 11], [87, 9], [88, 9], [101, 11], [112, 11], [113, 11]],
+      enemies: [[18, 11, 15, 20], [36, 11, 34, 38], [63, 12, 61, 64], [76, 11, 73, 79], [109, 12, 106, 111]],
+      cps: [[44, 12], [84, 10]],
+      stars: cat(line(3, 5, 9), line(7, 9, 7), [[12, 9], [13, 8], [14, 9]], line(17, 19, 8), [[22, 8], [23, 7], [24, 8]],
+                 line(26, 28, 7), [[30, 8], [31, 8], [32, 8]], line(35, 37, 8), [[40, 9], [41, 8], [42, 9]],
+                 line(46, 49, 9), [[52, 10], [53, 9], [54, 10]], line(55, 57, 10), [[58, 9], [59, 8], [60, 9]],
+                 [[70, 9], [71, 8], [72, 9]], line(75, 77, 8), [[80, 9], [81, 8], [82, 9]], line(87, 89, 7),
+                 [[92, 8], [93, 7], [94, 8]], line(97, 98, 9), line(100, 102, 7), line(104, 105, 9),
+                 line(107, 109, 7), line(112, 114, 9))
+    }
+  ];
+
+  /* ---------- state ---------- */
+  var PW = 12, PH = 14;
+  var GRAV = 0.36, JUMP = 6.3, ACC = 0.36, MAXV = 1.9;
+  var state = 'title';       // title | play | dead | levelDone | over | won
+  var lvlIndex = 0, lvl, W, grid, stars, enemies, cps, goal, respawn;
+  var p, cam = 0, t = 0, lives = 3, score = 0, best = 0, deadT = 0, parts = [];
+  var held = { left: false, right: false, jump: false }, jumpPressed = false;
+  var bgStars = [];
+  for (var i = 0; i < 45; i++) bgStars.push({ x: Math.random() * VW, y: Math.random() * 120, s: Math.random() * 6 });
+
+  try { best = parseInt(localStorage.getItem('star_journey_best') || '0', 10) || 0; } catch (e) {}
+
+  /* ---------- DOM ---------- */
+  var ov = document.getElementById('ov'), ovTitle = document.getElementById('ovTitle'),
+      ovText = document.getElementById('ovText'), ovHint = document.getElementById('ovHint'),
+      ovBtn = document.getElementById('ovBtn');
+  var hudLevel = document.getElementById('hudLevel'), hudStars = document.getElementById('hudStars'),
+      hudScore = document.getElementById('hudScore'), hudLives = document.getElementById('hudLives');
+
+  function showOverlay(title, text, hint, btn) {
+    ovTitle.textContent = title; ovText.textContent = text; ovHint.textContent = hint || ''; ovBtn.textContent = btn;
+    ovHint.style.display = hint ? '' : 'none';
+    ov.classList.remove('hidden');
+    ovBtn.focus({ preventScroll: true });
+  }
+  function hideOverlay() { ov.classList.add('hidden'); }
+
+  function gotCount() { var n = 0; for (var i = 0; i < stars.length; i++) if (stars[i].got) n++; return n; }
+  function hud() {
+    hudLevel.textContent = 'שלב ' + (lvlIndex + 1) + ': ' + lvl.name;
+    hudStars.textContent = 'כוכבים ' + gotCount() + '/' + stars.length;
+    hudScore.textContent = 'ניקוד ' + score;
+    var h = ''; for (var i = 0; i < lives; i++) h += '♥';
+    hudLives.textContent = h;
+  }
+
+  /* ---------- audio (tiny beeps) ---------- */
+  var ac = null;
+  function initAudio() {
+    try {
+      if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+    } catch (e) {}
+  }
+  function beep(f, d, type, vol) {
+    try {
+      if (!ac) return;
+      var o = ac.createOscillator(), g = ac.createGain();
+      o.type = type || 'square'; o.frequency.value = f; g.gain.value = vol || 0.035;
+      o.connect(g); g.connect(ac.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d); o.stop(ac.currentTime + d);
+    } catch (e) {}
+  }
+
+  /* ---------- level loading ---------- */
+  function build(def) {
+    var g = new Uint8Array(def.w * H);
+    def.ground.forEach(function (s) {
+      var top = s[2] !== undefined ? s[2] : 12;
+      for (var x = s[0]; x < s[1]; x++) for (var y = top; y < H; y++) g[y * def.w + x] = 1;
+    });
+    def.plats.forEach(function (q) { for (var i = 0; i < q[2]; i++) g[q[1] * def.w + q[0] + i] = 1; });
+    def.spikes.forEach(function (s) { g[s[1] * def.w + s[0]] = 2; });
+    return g;
+  }
+
+  function loadLevel(i) {
+    lvlIndex = i; lvl = LEVELS[i]; W = lvl.w; grid = build(lvl);
+    stars = lvl.stars.map(function (s) { return { x: s[0] * T + 8, y: s[1] * T + 8, got: false, ph: Math.random() * 6 }; });
+    enemies = lvl.enemies.map(function (e) {
+      return { x: e[0] * T, y: e[1] * T - 12, w: 12, h: 12, vx: 0.5, minX: e[2] * T, maxX: (e[3] + 1) * T - 12, alive: true };
+    });
+    cps = lvl.cps.map(function (c) { return { x: c[0] * T, row: c[1], on: false }; });
+    goal = { x: lvl.goal[0] * T, y: (lvl.goal[1] - 3) * T };
+    respawn = { x: lvl.start[0] * T + 2, y: lvl.start[1] * T - PH };
+    p = { x: respawn.x, y: respawn.y, vx: 0, vy: 0, face: 1, onGround: false, buf: 0, coy: 0 };
+    parts = [];
+    cam = clampCam(p.x + PW / 2 - VW / 2);
+    hud();
+  }
+
+  function clampCam(c) { return Math.max(0, Math.min(W * T - VW, c)); }
+
+  function startGame() {
+    lives = 3; score = 0;
+    loadLevel(0);
+    state = 'play';
+    hideOverlay();
+  }
+
+  /* ---------- collision ---------- */
+  function solid(tx, ty) {
+    if (tx < 0 || tx >= W) return true;
+    if (ty < 0 || ty >= H) return false;
+    return grid[ty * W + tx] === 1;
+  }
+  function collideX(e) {
+    var top = Math.floor(e.y / T), bot = Math.floor((e.y + PH - 0.01) / T);
+    var left = Math.floor(e.x / T), right = Math.floor((e.x + PW - 0.01) / T);
+    for (var ty = top; ty <= bot; ty++) for (var tx = left; tx <= right; tx++) {
+      if (solid(tx, ty)) {
+        if (e.vx > 0) e.x = tx * T - PW; else if (e.vx < 0) e.x = (tx + 1) * T;
+        e.vx = 0; return;
+      }
+    }
+  }
+  function collideY(e) {
+    var top = Math.floor(e.y / T), bot = Math.floor((e.y + PH - 0.01) / T);
+    var left = Math.floor(e.x / T), right = Math.floor((e.x + PW - 0.01) / T);
+    for (var ty = top; ty <= bot; ty++) for (var tx = left; tx <= right; tx++) {
+      if (solid(tx, ty)) {
+        if (e.vy > 0) { e.y = ty * T - PH; e.onGround = true; }
+        else if (e.vy < 0) e.y = (ty + 1) * T;
+        e.vy = 0; return;
+      }
+    }
+  }
+  function overlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  /* ---------- game logic ---------- */
+  function burst(x, y, c, n) {
+    for (var i = 0; i < n; i++) parts.push({ x: x, y: y, vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 3 - 0.5, l: 25 + Math.random() * 20, c: c });
+  }
+
+  function die() {
+    if (state !== 'play') return;
+    state = 'dead'; deadT = 55; lives--;
+    burst(p.x + 6, p.y + 7, '#f1ead8', 14); burst(p.x + 6, p.y + 7, '#e4572e', 8);
+    beep(160, 0.35, 'sawtooth', 0.05);
+    hud();
+  }
+
+  function afterDeath() {
+    if (lives <= 0) {
+      if (score > best) { best = score; try { localStorage.setItem('star_journey_best', String(best)); } catch (e) {} }
+      state = 'over';
+      showOverlay('נגמרו החיים', 'ניקוד: ' + score + '. שיא: ' + best + '.', '', 'ניסיון נוסף');
+    } else {
+      p.x = respawn.x; p.y = respawn.y; p.vx = 0; p.vy = 0; p.buf = 0; p.coy = 0;
+      cam = clampCam(p.x + PW / 2 - VW / 2);
+      state = 'play';
+    }
+  }
+
+  function updatePlay() {
+    var ax = (held.right ? 1 : 0) - (held.left ? 1 : 0);
+    if (ax) { p.vx += ax * ACC; p.face = ax; }
+    else { p.vx *= 0.78; if (Math.abs(p.vx) < 0.05) p.vx = 0; }
+    p.vx = Math.max(-MAXV, Math.min(MAXV, p.vx));
+
+    if (jumpPressed) { p.buf = 6; jumpPressed = false; } else if (p.buf > 0) p.buf--;
+    if (p.onGround) p.coy = 6; else if (p.coy > 0) p.coy--;
+    if (p.buf > 0 && p.coy > 0) { p.vy = -JUMP; p.buf = 0; p.coy = 0; p.onGround = false; beep(520, 0.12, 'square', 0.03); }
+    if (!held.jump && p.vy < -2.4) p.vy = -2.4;
+    p.vy = Math.min(p.vy + GRAV, 7);
+
+    p.x += p.vx; collideX(p);
+    p.onGround = false;
+    p.y += p.vy; collideY(p);
+
+    // spikes
+    var x0 = Math.floor(p.x / T), x1 = Math.floor((p.x + PW - 0.01) / T);
+    var y0 = Math.floor(p.y / T), y1 = Math.floor((p.y + PH - 0.01) / T);
+    for (var ty = y0; ty <= y1; ty++) for (var tx = x0; tx <= x1; tx++) {
+      if (tx >= 0 && tx < W && ty >= 0 && ty < H && grid[ty * W + tx] === 2 &&
+          overlap(p.x + 1, p.y + 1, PW - 2, PH - 2, tx * T + 3, ty * T + 7, T - 6, T - 7)) { die(); return; }
+    }
+    if (p.y > H * T + 30) { die(); return; }
+
+    // stars
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      if (!s.got && Math.abs(s.x - (p.x + PW / 2)) < 11 && Math.abs(s.y - (p.y + PH / 2)) < 12) {
+        s.got = true; score += 10; burst(s.x, s.y, '#ffd166', 6); beep(880, 0.1, 'triangle', 0.045); hud();
+      }
+    }
+    // enemies
+    for (var j = 0; j < enemies.length; j++) {
+      var e = enemies[j];
+      if (!e.alive) continue;
+      e.x += e.vx;
+      if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
+      if (e.x > e.maxX) { e.x = e.maxX; e.vx = -Math.abs(e.vx); }
+      if (overlap(p.x + 1, p.y + 1, PW - 2, PH - 2, e.x, e.y, e.w, e.h)) {
+        if (p.vy > 0 && (p.y + PH) - e.y < 10) {
+          e.alive = false; p.vy = -4.6; score += 50; burst(e.x + 6, e.y + 6, '#ffd166', 8); beep(330, 0.12, 'square', 0.04); hud();
+        } else { die(); return; }
+      }
+    }
+    // checkpoints
+    for (var k = 0; k < cps.length; k++) {
+      var c = cps[k];
+      if (!c.on && p.x + PW > c.x && p.x < c.x + T * 2) {
+        c.on = true; respawn = { x: c.x + 2, y: c.row * T - PH }; beep(660, 0.15, 'triangle', 0.04);
+      }
+    }
+    // goal
+    if (overlap(p.x, p.y, PW, PH, goal.x - 2, goal.y, T + 4, 3 * T)) {
+      score += 100; hud();
+      beep(784, 0.18, 'triangle', 0.05);
+      if (lvlIndex === LEVELS.length - 1) {
+        if (score > best) { best = score; try { localStorage.setItem('star_journey_best', String(best)); } catch (e) {} }
+        state = 'won';
+        showOverlay('סיימת את המסע!', 'ניקוד סופי: ' + score + '. שיא: ' + best + '.', '', 'לשחק שוב');
+      } else {
+        state = 'levelDone';
+        showOverlay('שלב הושלם', 'כוכבים: ' + gotCount() + ' מתוך ' + stars.length, '', 'לשלב הבא');
+      }
+    }
+  }
+
+  function updateParts() {
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var q = parts[i];
+      q.x += q.vx; q.y += q.vy; q.vy += 0.15; q.l--;
+      if (q.l <= 0) parts.splice(i, 1);
+    }
+  }
+
+  function update() {
+    t++;
+    if (state === 'play') updatePlay();
+    else if (state === 'dead') { deadT--; updateParts(); if (deadT <= 0) afterDeath(); }
+    else updateParts();
+    if (state === 'play') updateParts();
+    var target = clampCam(p.x + PW / 2 - VW / 2);
+    cam += (target - cam) * 0.12;
+  }
+
+  /* ---------- drawing ---------- */
+  function hills(color, f, base, amp, freq) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(0, VH);
+    for (var x = 0; x <= VW; x += 4) {
+      var wx = x + cam * f;
+      ctx.lineTo(x, base + Math.sin(wx * freq) * amp + Math.sin(wx * freq * 2.7 + 1) * amp * 0.4);
+    }
+    ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
+  }
+
+  function starShape(x, y, r) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.32, y - r * 0.32); ctx.lineTo(x + r, y);
+    ctx.lineTo(x + r * 0.32, y + r * 0.32); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.32, y + r * 0.32);
+    ctx.lineTo(x - r, y); ctx.lineTo(x - r * 0.32, y - r * 0.32); ctx.closePath(); ctx.fill();
+  }
+
+  function draw() {
+    if (!lvl) { lvl = LEVELS[0]; W = lvl.w; grid = build(lvl); stars = []; enemies = []; cps = []; goal = { x: -99, y: -99 }; p = { x: 40, y: 178, vx: 0, vy: 0, face: 1 }; }
+    var g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, lvl.sky[0]); g.addColorStop(1, lvl.sky[1]);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+
+    if (lvl.night) {
+      ctx.fillStyle = '#e9efff';
+      for (var i = 0; i < bgStars.length; i++) {
+        var b = bgStars[i];
+        if (Math.sin(t * 0.04 + b.s) > -0.3) ctx.fillRect(Math.round(b.x), Math.round(b.y), 1, 1);
+      }
+    }
+    ctx.fillStyle = lvl.orb; ctx.beginPath(); ctx.arc(lvl.orbPos[0], lvl.orbPos[1], lvl.orbR, 0, 6.2832); ctx.fill();
+    hills(lvl.hill[0], 0.12, 150, 16, 0.012);
+    hills(lvl.hill[1], 0.3, 178, 12, 0.019);
+
+    ctx.save();
+    ctx.translate(-Math.round(cam), 0);
+
+    // tiles
+    var c0 = Math.max(0, Math.floor(cam / T)), c1 = Math.min(W - 1, c0 + Math.ceil(VW / T) + 1);
+    for (var tx = c0; tx <= c1; tx++) for (var ty = 0; ty < H; ty++) {
+      var v = grid[ty * W + tx];
+      if (!v) continue;
+      var x = tx * T, y = ty * T;
+      if (v === 1) {
+        ctx.fillStyle = lvl.body; ctx.fillRect(x, y, T, T);
+        if (((tx * 7 + ty * 13) % 5) === 0) { ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(x + 4, y + 6, 3, 2); }
+        if (ty === 0 || grid[(ty - 1) * W + tx] !== 1) {
+          ctx.fillStyle = lvl.accent; ctx.fillRect(x, y, T, 3);
+          ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x, y + 3, T, 1);
+        }
+      } else if (v === 2) {
+        ctx.fillStyle = '#dfe6f2';
+        ctx.beginPath(); ctx.moveTo(x + 1, y + T); ctx.lineTo(x + 5, y + 6); ctx.lineTo(x + 8, y + T); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x + 8, y + T); ctx.lineTo(x + 11, y + 6); ctx.lineTo(x + 15, y + T); ctx.fill();
+        ctx.fillStyle = '#8a95ab'; ctx.fillRect(x + 1, y + T - 2, T - 2, 2);
+      }
+    }
+
+    // checkpoints
+    for (var k = 0; k < cps.length; k++) {
+      var cp = cps[k], sy = cp.row * T;
+      ctx.fillStyle = '#c9c3b5'; ctx.fillRect(cp.x + 7, sy - 24, 2, 24);
+      ctx.fillStyle = cp.on ? lvl.accent : '#6b6b7a';
+      ctx.beginPath(); ctx.moveTo(cp.x + 9, sy - 24); ctx.lineTo(cp.x + 19, sy - 19); ctx.lineTo(cp.x + 9, sy - 14); ctx.fill();
+    }
+
+    // goal gate
+    var gx = goal.x, gy = goal.y;
+    ctx.fillStyle = '#f4ecd8'; ctx.fillRect(gx - 3, gy, 4, 3 * T); ctx.fillRect(gx + T - 1, gy, 4, 3 * T); ctx.fillRect(gx - 4, gy - 3, T + 8, 4);
+    ctx.fillStyle = 'rgba(255,209,102,' + (0.3 + 0.18 * Math.sin(t * 0.08)) + ')';
+    ctx.fillRect(gx + 1, gy + 2, T - 2, 3 * T - 2);
+    ctx.fillStyle = '#ffd166'; starShape(gx + 8, gy - 10 + Math.sin(t * 0.07) * 2, 5);
+
+    // stars
+    ctx.fillStyle = '#ffd166';
+    for (var s = 0; s < stars.length; s++) {
+      var st = stars[s];
+      if (st.got || st.x < cam - 12 || st.x > cam + VW + 12) continue;
+      var by = st.y + Math.sin(t * 0.06 + st.ph) * 2;
+      ctx.fillStyle = '#ffd166'; starShape(st.x, by, 6);
+      ctx.fillStyle = '#fff6cf'; ctx.fillRect(Math.round(st.x) - 1, Math.round(by) - 1, 2, 2);
+    }
+
+    // enemies
+    for (var j = 0; j < enemies.length; j++) {
+      var e = enemies[j];
+      if (!e.alive) continue;
+      var ex = Math.round(e.x), ey = Math.round(e.y);
+      ctx.fillStyle = '#1a1830';
+      ctx.fillRect(ex, ey + 3, 12, 8); ctx.fillRect(ex + 2, ey, 8, 3);
+      var foot = (Math.floor(t / 8) % 2) ? 0 : 2;
+      ctx.fillRect(ex + foot, ey + 11, 4, 1); ctx.fillRect(ex + 8 - foot, ey + 11, 4, 1);
+      ctx.fillStyle = '#ffd166';
+      var ed = e.vx > 0 ? 1 : 0;
+      ctx.fillRect(ex + 2 + ed, ey + 4, 3, 3); ctx.fillRect(ex + 7 + ed, ey + 4, 3, 3);
+      ctx.fillStyle = '#1a1830'; ctx.fillRect(ex + 3 + ed * 2, ey + 5, 1, 1); ctx.fillRect(ex + 8 + ed * 2, ey + 5, 1, 1);
+    }
+
+    // player
+    if (state !== 'dead') {
+      var px = Math.round(p.x), py = Math.round(p.y), f = p.face;
+      var wob = Math.sin(t * 0.35) * 1.5;
+      ctx.fillStyle = '#e4572e';
+      ctx.fillRect(f > 0 ? px - 5 : px + PW, py + 5 + wob * 0.5, 5, 3);
+      ctx.fillRect(f > 0 ? px - 8 : px + PW + 3, py + 6 + wob, 3, 2);
+      ctx.fillStyle = '#f1ead8'; ctx.fillRect(px, py, PW, PH - 3);
+      ctx.fillStyle = '#e4572e'; ctx.fillRect(px, py, PW, 3);
+      ctx.fillStyle = '#1b1530'; ctx.fillRect(px + (f > 0 ? 7 : 3), py + 5, 2, 3);
+      ctx.fillStyle = '#3b3355';
+      var step = (Math.abs(p.vx) > 0.3 && p.onGround) ? (Math.floor(t / 5) % 2) : 0;
+      ctx.fillRect(px + (step ? 1 : 0), py + PH - 3, 4, 3); ctx.fillRect(px + PW - 4 - (step ? 1 : 0), py + PH - 3, 4, 3);
+    }
+
+    // particles
+    for (var q = 0; q < parts.length; q++) {
+      var pt = parts[q]; ctx.fillStyle = pt.c; ctx.fillRect(Math.round(pt.x), Math.round(pt.y), 2, 2);
+    }
+    ctx.restore();
+  }
+
+  /* ---------- loop ---------- */
+  var last = 0, acc = 0;
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (!last) last = ts;
+    acc += Math.min(ts - last, 100); last = ts;
+    while (acc >= 16.667) { update(); acc -= 16.667; }
+    draw();
+  }
+
+  /* ---------- input ---------- */
+  function overlayAction() {
+    initAudio();
+    if (state === 'title' || state === 'over' || state === 'won') startGame();
+    else if (state === 'levelDone') { loadLevel(lvlIndex + 1); state = 'play'; hideOverlay(); }
+  }
+  ovBtn.addEventListener('click', overlayAction);
+
+  var KEYS = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
+               ArrowUp: 'jump', w: 'jump', W: 'jump', ' ': 'jump' };
+  window.addEventListener('keydown', function (e) {
+    var k = KEYS[e.key];
+    if (!k) return;
+    e.preventDefault();
+    initAudio();
+    if (!ov.classList.contains('hidden')) { if (e.key === ' ' || e.key === 'Enter') overlayAction(); return; }
+    if (k === 'jump' && !held.jump) jumpPressed = true;
+    held[k] = true;
+  });
+  window.addEventListener('keyup', function (e) { var k = KEYS[e.key]; if (k) held[k] = false; });
+  window.addEventListener('blur', function () { held.left = held.right = held.jump = false; });
+
+  function bindHold(id, key) {
+    var b = document.getElementById(id);
+    b.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); initAudio();
+      try { b.setPointerCapture(e.pointerId); } catch (x) {}
+      if (key === 'jump') jumpPressed = true;
+      held[key] = true;
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) { b.addEventListener(ev, function () { held[key] = false; }); });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  }
+  bindHold('bL', 'left'); bindHold('bR', 'right'); bindHold('bJ', 'jump');
+
+  loadLevel(0);
+  state = 'title';
+  hud();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
